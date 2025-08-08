@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm:dev-frontend\" \"npm:dev-backend\"",
+    "dev-frontend": "cd apps/frontend && npm run dev",
+    "dev-backend": "cd apps/backend && dotnet watch run"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}
