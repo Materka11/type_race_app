@@ -5,13 +5,19 @@ namespace backend.Models
     public class Game
     {
         public string RoomId { get; }
-        private readonly ConcurrentDictionary<string, string> Players = new();
-        public bool IsEmpty => Players.Count == 0;
+        public string HostConnectionId { get; set; }
+        public GameStatus GameStatus { get; set; } = GameStatus.NotStarted;
+        public string Paragraph { get; set; } = "";
+        public string[] ParagraphWords { get; set; } = Array.Empty<string>();
+        public ConcurrentDictionary<string, Player> Players { get; } = new();
+        public bool IsEmpty => Players.IsEmpty;
         public const int MaxPlayers = 10;
+        public CancellationTokenSource? GameTimer { get; set; }
 
-        public Game(string roomId)
+        public Game(string roomId, string hostConnectionId)
         {
             RoomId = roomId;
+            HostConnectionId = hostConnectionId;
         }
 
         public bool AddPlayer(string connectionId, string name)
@@ -20,19 +26,16 @@ namespace backend.Models
             {
                 return false;
             }
-            Players[connectionId] = name;
-            return true;
+            if (GameStatus != GameStatus.NotStarted)
+            {
+                return false;
+            }
+            return Players.TryAdd(connectionId, new Player { ConnectionId = connectionId, Name = name, Score = 0 });
         }
 
-        public bool RemovePlayer(string connectionId, out string? name)
+        public bool RemovePlayer(string connectionId, out Player? player)
         {
-            if (Players.TryGetValue(connectionId, out name))
-            {
-                Players.TryRemove(connectionId, out name);
-                return true;
-            }
-            name = null;
-            return false;
+            return Players.TryRemove(connectionId, out player);
         }
     }
 }
