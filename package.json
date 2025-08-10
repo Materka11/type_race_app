@@ -1,6 +1,7 @@
 {
   "private": true,
   "scripts": {
+    "install": "cd apps/frontend && npm install",
     "dev": "concurrently \"npm:dev-frontend\" \"npm:dev-backend\"",
     "dev-frontend": "cd apps/frontend && npm run dev",
     "dev-backend": "cd apps/backend && dotnet watch run"
