@@ -18,6 +18,7 @@ namespace backend.Models
         {
             RoomId = roomId;
             HostConnectionId = hostConnectionId;
+            Console.WriteLine($"Game created for room {roomId} with host {hostConnectionId}");
         }
 
         public bool AddPlayer(string connectionId, string name)
@@ -30,7 +31,7 @@ namespace backend.Models
             {
                 return false;
             }
-            return Players.TryAdd(connectionId, new Player { ConnectionId = connectionId, Name = name, Score = 0 });
+            return Players.TryAdd(connectionId, new Player { ConnectionId = connectionId, Name = name, Score = 0, Precision = 0.0 });
         }
 
         public bool RemovePlayer(string connectionId, out Player? player)
