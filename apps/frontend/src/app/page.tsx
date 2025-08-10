@@ -1,103 +1,76 @@
-import Image from "next/image";
+import { Button } from "@heroui/button";
+import { Card } from "@heroui/card";
+import { Input } from "@heroui/input";
+import { redirect } from "next/navigation";
+import toast from "react-hot-toast";
+import { v4 as uuidv4 } from "uuid";
 
 export default function Home() {
-  return (
-    <div className="grid min-h-screen grid-rows-[20px_1fr_20px] items-center justify-items-center gap-16 p-8 pb-20 font-sans sm:p-20">
-      <main className="row-start-2 flex flex-col items-center gap-[32px] sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-center font-mono text-sm/6 sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="rounded bg-black/[.05] px-1 py-0.5 font-mono font-semibold dark:bg-white/[.06]">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+  const createGame = async () => {
+    "use server";
 
-        <div className="flex flex-col items-center gap-4 sm:flex-row">
-          <a
-            className="bg-foreground text-background flex h-10 items-center justify-center gap-2 rounded-full border border-solid border-transparent px-4 text-sm font-medium transition-colors hover:bg-[#383838] sm:h-12 sm:w-auto sm:px-5 sm:text-base dark:hover:bg-[#ccc]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="flex h-10 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-4 text-sm font-medium transition-colors hover:border-transparent hover:bg-[#f2f2f2] sm:h-12 sm:w-auto sm:px-5 sm:text-base md:w-[158px] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    const inviteCode = uuidv4();
+    redirect(`/game/${inviteCode}`);
+  };
+
+  const joinGame = async (formData: FormData) => {
+    "use server";
+
+    const inviteCode = formData.get("invite_code") as string;
+
+    if (!inviteCode) {
+      toast.error("Invite code is required");
+      return;
+    }
+
+    redirect(`/game/${inviteCode}`);
+  };
+
+  return (
+    <main className="mx-auto w-full max-w-5xl p-5">
+      <h1 className="mt-10 text-4xl font-bold">Type Race</h1>
+      <p className="mt-5 text-lg text-gray-400">
+        A simple yet addictive typing game designed to sharpen your speed, boost
+        your accuracy, and test your focus under pressure. Whether you want to
+        challenge your friends or push your solo high score, Type Race will keep
+        you on your toes.
+      </p>
+      <Card className="mt-10 grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
+        <div className="flex flex-col justify-between p-5">
+          <section>
+            <h2 className="text-2xl font-medium">Create Game</h2>
+            <p className="mt-5 text-gray-400">
+              Start your own race and share the invite code with your friends.
+              You’ll choose a paragraph, set a countdown, and watch the chaos
+              unfold as everyone tries to finish first.
+            </p>
+          </section>
+          <form action={createGame}>
+            <Button type="submit" className="mt-5 w-full">
+              Create Game
+            </Button>
+          </form>
         </div>
-      </main>
-      <footer className="row-start-3 flex flex-wrap items-center justify-center gap-[24px]">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        <div className="flex flex-col justify-between p-5">
+          <section>
+            <h2 className="text-2xl font-medium">Join Game</h2>
+            <p className="mt-5 text-gray-400">
+              Already have a game code from a friend? Enter it below to jump
+              right into the action. The race will begin once all players are
+              ready.
+            </p>
+          </section>
+          <section className="mt-5">
+            <form action={joinGame}>
+              <Input type="text" placeholder="Invite Code" name="invite_code" />
+              <Button type="submit" className="mt-3 w-full">
+                Join Game
+              </Button>
+            </form>
+          </section>
+        </div>
+      </Card>
+    </main>
   );
 }
