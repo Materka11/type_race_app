@@ -12,64 +12,81 @@ namespace backend.Hubs
 
         public async Task JoinGame(string roomId, string name)
         {
+            Console.WriteLine($"JoinGame attempt: roomId={roomId}, name={name}, connectionId={Context.ConnectionId}");
+
+            if (Rooms.TryGetValue(roomId, out var game) && game.Players.Values.Any(p => p.Name == name))
+            {
+                Console.WriteLine($"Rejected: Player with name {name} already exists in room {roomId}");
+                await Clients.Caller.SendAsync("error", "A player with this name is already in the room.");
+                return;
+            }
+
             ConnectionToRoomMap[Context.ConnectionId] = roomId;
 
             if (roomId.Length > 50 || name.Length > 50)
             {
-                await Clients.Caller.SendAsync("Error", "Room ID or name too long.");
+                Console.WriteLine($"Rejected: Room ID or name too long for {Context.ConnectionId}");
+                await Clients.Caller.SendAsync("error", "Room ID or name too long.");
                 return;
             }
             if (!Regex.IsMatch(roomId, @"^[a-zA-Z0-9_-]+$"))
             {
-                await Clients.Caller.SendAsync("Error", "Invalid characters in room ID.");
+                Console.WriteLine($"Rejected: Invalid characters in room ID for {Context.ConnectionId}");
+                await Clients.Caller.SendAsync("error", "Invalid characters in room ID.");
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(roomId))
             {
-                await Clients.Caller.SendAsync("Error", "Invalid room ID");
+                Console.WriteLine($"Rejected: Invalid room ID for {Context.ConnectionId}");
+                await Clients.Caller.SendAsync("error", "Invalid room ID");
                 return;
             }
             if (string.IsNullOrWhiteSpace(name))
             {
-                await Clients.Caller.SendAsync("Error", "Please provide nickname.");
+                Console.WriteLine($"Rejected: No nickname provided for {Context.ConnectionId}");
+                await Clients.Caller.SendAsync("error", "Please provide nickname.");
                 return;
             }
 
             try
             {
                 await Groups.AddToGroupAsync(Context.ConnectionId, roomId);
+                Console.WriteLine($"Added {Context.ConnectionId} to group {roomId}");
             }
             catch (Exception ex)
             {
-                await Clients.Caller.SendAsync("Error", "Failed to join room.");
+                Console.WriteLine($"Failed to add {Context.ConnectionId} to group {roomId}: {ex.Message}");
+                await Clients.Caller.SendAsync("error", "Failed to join room.");
                 return;
             }
 
-            Game? game;
             bool isNewGame = false;
             if (!Rooms.TryGetValue(roomId, out game))
             {
                 game = new Game(roomId, Context.ConnectionId);
                 Rooms[roomId] = game;
                 isNewGame = true;
+                Console.WriteLine($"New game {roomId} created with host {game.HostConnectionId}");
             }
 
             var added = game.AddPlayer(Context.ConnectionId, name);
 
             if (!added)
             {
-                await Clients.Caller.SendAsync("Error", "Room is full or game has already started.");
+                Console.WriteLine($"Rejected: Room full or started for {Context.ConnectionId}");
+                await Clients.Caller.SendAsync("error", "Room is full or game has already started.");
                 return;
             }
 
-            await Clients.Group(roomId).SendAsync("PlayerJoined", new { Id = Context.ConnectionId, Name = name, Score = 0 });
-            await Clients.Caller.SendAsync("Players", game.Players.Values.Select(p => new { p.ConnectionId, p.Name, p.Score }));
-            await Clients.Caller.SendAsync("NewHost", game.HostConnectionId);
+            await Clients.Group(roomId).SendAsync("player-joined", new { id = Context.ConnectionId, name, score = 0, precision = 0.0 });
+            await Clients.Caller.SendAsync("players", game.Players.Values.Select(p => new { id = p.ConnectionId, name = p.Name, score = p.Score, precision = p.Precision }));
+            await Clients.Caller.SendAsync("new-host", game.HostConnectionId);
+            Console.WriteLine($"Sent new-host to {Context.ConnectionId} with host ID {game.HostConnectionId}");
 
             if (isNewGame)
             {
-                await Clients.Group(roomId).SendAsync("GameCreated", roomId);
+                await Clients.Group(roomId).SendAsync("game-created", roomId);
             }
         }
 
@@ -78,36 +95,38 @@ namespace backend.Hubs
             var connectionId = Context.ConnectionId;
             if (!ConnectionToRoomMap.TryGetValue(connectionId, out var roomId) || !Rooms.TryGetValue(roomId, out var game) || game == null)
             {
-                await Clients.Caller.SendAsync("Error", "Not in a game");
+                await Clients.Caller.SendAsync("error", "Not in a game");
                 return;
             }
 
             if (game.GameStatus != GameStatus.NotStarted)
             {
-                await Clients.Caller.SendAsync("Error", "The game has already started");
+                await Clients.Caller.SendAsync("error", "The game has already started");
                 return;
             }
 
             if (game.HostConnectionId != connectionId)
             {
-                await Clients.Caller.SendAsync("Error", "You are not the host of the game. Only the host can start the game.");
+                Console.WriteLine($"StartGame failed: Caller {connectionId} is not host {game.HostConnectionId}");
+                await Clients.Caller.SendAsync("error", "You are not the host of the game. Only the host can start the game.");
                 return;
             }
 
             foreach (var p in game.Players.Values)
             {
                 p.Score = 0;
+                p.Precision = 0.0;
             }
 
-            await Clients.Group(roomId).SendAsync("Players", game.Players.Values.Select(p => new { p.ConnectionId, p.Name, p.Score }));
+            await Clients.Group(roomId).SendAsync("players", game.Players.Values.Select(p => new { id = p.ConnectionId, name = p.Name, score = p.Score, precision = p.Precision }));
 
             game.GameStatus = GameStatus.InProgress;
 
             var paragraph = await GenerateParagraphAsync();
             game.Paragraph = paragraph;
-            game.ParagraphWords = paragraph.Split(' ');
+            game.ParagraphWords = paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-            await Clients.Group(roomId).SendAsync("GameStarted", paragraph);
+            await Clients.Group(roomId).SendAsync("game-started", paragraph);
 
             game.GameTimer = new CancellationTokenSource();
             _ = Task.Delay(60000, game.GameTimer.Token).ContinueWith(async t =>
@@ -115,8 +134,8 @@ namespace backend.Hubs
                 if (!t.IsCanceled && Rooms.TryGetValue(roomId, out var g) && g.GameStatus == GameStatus.InProgress)
                 {
                     g.GameStatus = GameStatus.Finished;
-                    await Clients.Group(roomId).SendAsync("GameFinished");
-                    await Clients.Group(roomId).SendAsync("Players", g.Players.Values.Select(p => new { p.ConnectionId, p.Name, p.Score }));
+                    await Clients.Group(roomId).SendAsync("game-finished");
+                    await Clients.Group(roomId).SendAsync("players", g.Players.Values.Select(p => new { id = p.ConnectionId, name = p.Name, score = p.Score }));
                 }
             });
         }
@@ -126,23 +145,22 @@ namespace backend.Hubs
             var connectionId = Context.ConnectionId;
             if (!ConnectionToRoomMap.TryGetValue(connectionId, out var roomId) || !Rooms.TryGetValue(roomId, out var game) || game == null)
             {
-                await Clients.Caller.SendAsync("Error", "Not in a game");
+                await Clients.Caller.SendAsync("error", "Not in a game");
                 return;
             }
 
             if (game.GameStatus != GameStatus.InProgress)
             {
-                await Clients.Caller.SendAsync("Error", "The game has not started yet");
+                await Clients.Caller.SendAsync("error", "The game has not started yet");
                 return;
             }
 
-            var splitTyped = typed.Split(' ');
-
+            var splitTyped = typed.TrimEnd().Split(' ', StringSplitOptions.RemoveEmptyEntries);
             int score = 0;
-            for (int i = 0; i < splitTyped.Length; i++)
+
+            for (int i = 0; i < splitTyped.Length && i < game.ParagraphWords.Length; i++)
             {
-                if (i >= game.ParagraphWords.Length) break;
-                if (splitTyped[i] == game.ParagraphWords[i])
+                if (splitTyped[i].Equals(game.ParagraphWords[i], StringComparison.OrdinalIgnoreCase))
                 {
                     score++;
                 }
@@ -152,10 +170,42 @@ namespace backend.Hubs
                 }
             }
 
+            double precision = 0.0;
+            var typedText = typed.TrimEnd();
+            var paragraphText = game.Paragraph.Substring(0, Math.Min(typedText.Length, game.Paragraph.Length));
+            int correctChars = 0;
+            for (int i = 0; i < Math.Min(typedText.Length, paragraphText.Length); i++)
+            {
+                if (char.ToLower(typedText[i]) == char.ToLower(paragraphText[i]))
+                {
+                    correctChars++;
+                }
+            }
+            if (typedText.Length > 0)
+            {
+                precision = (double)correctChars / typedText.Length * 100;
+            }
+
+            bool isFinished = score == game.ParagraphWords.Length && typedText.Length >= game.Paragraph.Length;
+
             if (game.Players.TryGetValue(connectionId, out var player) && player != null)
             {
                 player.Score = score;
-                await Clients.Group(roomId).SendAsync("PlayerScore", new { Id = connectionId, Score = score });
+                player.Precision = precision;
+                Console.WriteLine($"Updated player {connectionId}: score={score}, precision={precision}");
+                await Clients.Group(roomId).SendAsync("player-score", new { id = connectionId, score, precision });
+            }
+
+            if (isFinished)
+            {
+                game.GameStatus = GameStatus.Finished;
+                if (game.GameTimer != null)
+                {
+                    game.GameTimer.Cancel();
+                    game.GameTimer = null;
+                }
+                await Clients.Group(roomId).SendAsync("game-finished");
+                await Clients.Group(roomId).SendAsync("players", game.Players.Values.Select(p => new { id = p.ConnectionId, name = p.Name, score = p.Score, precision = p.Precision }));
             }
         }
 
@@ -166,14 +216,23 @@ namespace backend.Hubs
             {
                 if (game.RemovePlayer(Context.ConnectionId, out var player) && player != null)
                 {
-                    await Clients.Group(roomId).SendAsync("UserLeft", player);
+                    await Clients.Group(roomId).SendAsync("player-left", player.ConnectionId);
                     await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId);
 
                     if (game.IsEmpty)
                     {
                         Rooms.TryRemove(roomId, out _);
                         ConnectionToRoomMap.TryRemove(Context.ConnectionId, out _);
-                        await Clients.Group(roomId).SendAsync("GameEnded", roomId);
+                        await Clients.Group(roomId).SendAsync("game-ended", roomId);
+                    }
+                    else if (game.HostConnectionId == Context.ConnectionId)
+                    {
+                        var newHost = game.Players.Values.FirstOrDefault();
+                        if (newHost != null)
+                        {
+                            game.HostConnectionId = newHost.ConnectionId;
+                            await Clients.Group(roomId).SendAsync("new-host", newHost.ConnectionId);
+                        }
                     }
                 }
             }
@@ -189,7 +248,7 @@ namespace backend.Hubs
                 if (response.IsSuccessStatusCode)
                 {
                     var data = await response.Content.ReadAsStringAsync();
-                    return data.Replace("\n", " ");
+                    return data.Replace("\n", " ").Trim();
                 }
             }
             catch { }
@@ -207,7 +266,7 @@ namespace backend.Hubs
             {
                 paragraph.Add(words[rnd.Next(words.Length)]);
             }
-            return string.Join(" ", paragraph).ToLower();
+            return string.Join(" ", paragraph).ToLower().Trim();
         }
     }
 }
